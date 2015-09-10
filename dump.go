@@ -157,10 +157,16 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 		vardict.SetMeta("ptr")
 		// No matter what the type is, we need to get VarDict from a pointer
 		address := fmt.Sprintf("%d", reflect.ValueOf(variable).Pointer())
-		obj := reflect.ValueOf(variable).Elem().Interface()
-		childVarDict := GetVarDictFromValue(obj, depth+1)
-		childVarDict.SetAddress(address)
-		vardict.SetValue(childVarDict)
+		ptrval := reflect.ValueOf(variable)
+		if ptrval != nil && ptrval.Elem().CanInterface() {
+			objval := ptrval.Elem()
+			obj := objval.Interface()
+			childVarDict := GetVarDictFromValue(obj, depth+1)
+			childVarDict.SetAddress(address)
+			vardict.SetValue(childVarDict)
+		} else {
+			vardict.SetValue("#NULL#")
+		}
 	case reflect.Array, reflect.Slice:
 		if kind == reflect.Array {
 			vardict.SetMeta("array")
@@ -177,7 +183,9 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			vi := v.Index(i)
 			obji := vi.Interface()
 			childvardict := *GetVarDictFromValue(obji, depth+1)
+			fmt.Println(vi.Kind())
 			if needsPtrForKind(vi.Kind()) && vi.CanAddr() {
+
 				address := fmt.Sprintf("%d", vi.Addr().Pointer())
 				childvardict.SetAddress(address)
 			}
@@ -211,17 +219,17 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			// Get key's VarDict
 			keyobj := key.Interface()
 			keyVarDict := GetVarDictFromValue(keyobj, depth+1)
-			if needsPtrForKind(key.Kind()) {
-				address := fmt.Sprintf("%d", reflect.ValueOf(&keyobj).Pointer())
-				keyVarDict.SetAddress(address)
-			}
+			// if needsPtrForKind(key.Kind()) {
+			// 	address := fmt.Sprintf("%d", reflect.ValueOf(&keyobj).Pointer())
+			// 	keyVarDict.SetAddress(address)
+			// }
 			kv.setKey(keyVarDict)
 			// Get Value's VarDict
 			value := v.MapIndex(key)
 			valueobj := value.Interface()
 			valueVarDict := GetVarDictFromValue(valueobj, depth+1)
-			if needsPtrForKind(value.Kind()) {
-				address := fmt.Sprintf("%d", reflect.ValueOf(&valueobj).Pointer())
+			if needsPtrForKind(value.Kind()) && value.CanAddr() {
+				address := fmt.Sprintf("%d", value.Addr().Pointer())
 				valueVarDict.SetAddress(address)
 			}
 			kv.setValue(valueVarDict)
@@ -242,6 +250,7 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			// }
 			valueobj := value.Interface()
 			valueVarDict := GetVarDictFromValue(valueobj, depth+1)
+			fmt.Println("field"+fieldName, value.CanAddr())
 			if needsPtrForKind(value.Kind()) && value.CanAddr() {
 				address := fmt.Sprintf("%d", value.Addr().Pointer())
 				valueVarDict.SetAddress(address)

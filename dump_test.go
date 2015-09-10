@@ -32,8 +32,16 @@ func TestDump(t *testing.T) {
 	m := EXAMPLE {
 		Ex: tt,
 	}
+	ptree := &m
+	fmt.Println(ptree)
 	m.ExPtr = &m.Ex
 
+	
 	fmt.Println(string(GetVarDict("tt", tt).Dump()))
 	fmt.Println(string(GetVarDict("m", m).Dump()))
+
+	arr := make([]TT, 3)
+	arr[0] = TT{"sfsdd", pi}
+	
+	fmt.Println(string(GetVarDict("array", arr).Dump()))
 }
