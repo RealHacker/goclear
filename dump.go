@@ -1,17 +1,19 @@
 /*
-	Dump a variable in JSON format like this
+	Dump a variable in JSON format like this (VarDict)
 	{
-		varname: "variable name",
-		typename: "variable type",
-		metatype: "type of type - map/slice/struct/ptr"
+		name: "variable name",
+		type: "specific variable type - mostly user defined",
+		metatype: "type of type - map/slice/struct/ptr/int..."
 		address: "address of variable, available for slice/array/struct/map",
 		value: depending on type, could be a list/object with embeded variables:
-			for a slice/array - a JSON list
-			for a struct - a dict
-			for a map - if the key is string, a dict
-				else, a JSON list like [{key:keyvariable, value:valuevariable}]
-			for a pointer - the variable it points to
+			for a slice/array - a JSON list of VarDicts
+			for a struct - a dict mapping from string (field name) to VarDicts
+			for a map - a JSON list like [{key: key Vardict, value:value VarDict}]
+			for a pointer - the VarDict of variable it points to
 			for basic type - the value itself
+			for a NULL pointer - "#NULL#"
+			for a variable visited through another pointer - "#VISITED#"
+			for a node too deeply recursed - "#DEPTH_EXCEEDED#""
 	}
 */
 package goclear
@@ -38,7 +40,7 @@ func (kv KeyValuePair) setValue(obj interface{}) {
 type VarDict map[string]interface{}
 
 func (dict VarDict) Dump() []byte {
-	v, err := json.MarshalIndent(dict, "-", "\t")
+	v, err := json.MarshalIndent(dict, "-", "  ")
 	if err != nil {
 		printLog("ERROR when marshalling into JSON:", dict)
 		return nil
@@ -73,7 +75,6 @@ func (dict VarDict) SetField(name string, val interface{}) {
 // Provide a new blank VarDict
 func NewVarDict() *VarDict {
 	dict := make(VarDict)
-	dict["type"] = nil
 	dict["metatype"] = nil
 	dict["value"] = nil
 	return &dict
@@ -89,44 +90,21 @@ func needsPtrForKind(kind reflect.Kind) bool {
 	}
 }
 
+// This cache serves 2 purpose:
+// 1. Avoid entering a pointer loop when recursing
+// 2. Avoid dumping an object already visited with pointer
+var PointerCache []int64
+
 // The entry point for generating a VarDict
 // It determines whether to call GetVarDictFromPtr or GetVarDictFromValue
 func GetVarDict(name string, obj interface{}) *VarDict {
+	// Get a clean pointer cache
+	PointerCache = make([]int64, 32)
+
 	vardict := GetVarDictFromValue(obj, 0)
 	vardict.SetName(name)
 	return vardict
 }
-
-// Generate a VarDict for the object ptr pointed to, also record the pointer address,
-// 	call this function for struct/slice/map (complex type)
-// func GetVarDictFromPtr(ptr interface{}, depth int) *VarDict {
-// 	// vardict := NewVarDict()
-// 	// Get the pointer address
-// 	address := fmt.Sprintf("%d", reflect.ValueOf(ptr).Pointer())
-// 	vardict.SetAddress(address)
-// 	// Dereferencing the pointer
-// 	v := reflect.ValueOf(ptr).Elem()
-// 	t := v.Type()
-// 	vardict.SetType(t.Name())
-// 	kind := v.Kind()
-
-// 	switch kind {
-
-// 	default:
-// 		// Cases where simple value also needs their ptr to be saved
-// 		// For instance, when the simple value is referenced by a pointer
-// 		// Call GetVarDictFromValue and copy the fields over
-// 		_vardict := *GetVarDictFromValue(v.Interface(), depth)
-// 		meta, ok := _vardict["metatype"].(string)
-// 		//TODO: error handling
-// 		if !ok {
-// 			printLog("Error")
-// 		}
-// 		vardict.SetMeta(meta)
-// 		vardict.SetValue(_vardict["value"])
-// 	}
-// 	return vardict
-// }
 
 // Generate a VarDict for the object itself, for basic types like int, string, and pointer
 func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
@@ -141,7 +119,7 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 	if depth > Config.MaxDepth {
 		vardict.SetType("depth")
 		vardict.SetMeta("depth")
-		vardict.SetValue("#DEPTH EXCEEDED#")
+		vardict.SetValue("#DEPTH_EXCEEDED#")
 		return vardict
 	}
 	v := reflect.ValueOf(variable)
@@ -156,14 +134,37 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 	case reflect.Ptr:
 		vardict.SetMeta("ptr")
 		// No matter what the type is, we need to get VarDict from a pointer
-		address := fmt.Sprintf("%d", reflect.ValueOf(variable).Pointer())
-		ptrval := reflect.ValueOf(variable)
-		if ptrval != nil && ptrval.Elem().CanInterface() {
-			objval := ptrval.Elem()
-			obj := objval.Interface()
-			childVarDict := GetVarDictFromValue(obj, depth+1)
-			childVarDict.SetAddress(address)
-			vardict.SetValue(childVarDict)
+		ptr := reflect.ValueOf(variable).Pointer()		
+		if ptr != 0 {
+			address := fmt.Sprintf("%d", ptr)
+			// Check if the object pointed by ptr has been visited
+			visited := false
+			for _, p := range PointerCache {
+				if p == int64(ptr) {
+					visited = true
+					break
+				}
+			}
+			if !visited {
+				// Put the pointer in for future checking
+				PointerCache = append(PointerCache, int64(ptr))
+				objval := reflect.ValueOf(variable).Elem()
+				if objval.CanInterface(){			
+					obj := objval.Interface()
+					childVarDict := GetVarDictFromValue(obj, depth+1)
+					childVarDict.SetAddress(address)
+					vardict.SetValue(childVarDict)
+				} else{
+					vardict.SetValue("#NULL#")
+				}
+			} else{
+				// Make a special VISITED vardict
+				visitedVarDict := NewVarDict()
+				visitedVarDict.SetAddress(address)
+				visitedVarDict.SetMeta("visited")
+				visitedVarDict.SetValue("#VISITED#")
+				vardict.SetValue(visitedVarDict)
+			}
 		} else {
 			vardict.SetValue("#NULL#")
 		}
@@ -183,30 +184,13 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			vi := v.Index(i)
 			obji := vi.Interface()
 			childvardict := *GetVarDictFromValue(obji, depth+1)
-			fmt.Println(vi.Kind())
 			if needsPtrForKind(vi.Kind()) && vi.CanAddr() {
-
 				address := fmt.Sprintf("%d", vi.Addr().Pointer())
 				childvardict.SetAddress(address)
 			}
 			varDictArray[i] = childvardict
 		}
 		vardict.SetValue(varDictArray)
-	// case reflect.Slice:
-	// 	vardict.SetMeta("slice")
-	// 	slicelen := v.Len()
-	// 	vardict.SetField("len", slicelen)
-	// 	vardict.SetField("cap", v.Cap())
-	// 	varDictArray := make([]VarDict, slicelen)
-	// 	// For slice, we will directly convert obj to []interface{}
-	// 	for i, obji := range []interface{}(obj) {
-	// 		if needsPtrForKind(reflect.ValueOf(obji).Kind()) {
-	// 			varDictArray[i] = *GetVarDictFromPtr(&obji, depth+1)
-	// 		} else {
-	// 			varDictArray[i] = *GetVarDictFromValue(obji, depth+1)
-	// 		}
-	// 	}
-	// 	vardict.SetValue(varDictArray)
 	case reflect.Map:
 		vardict.SetMeta("map")
 		// For map, we can convert to map[interface{}]interface{}
@@ -219,10 +203,10 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			// Get key's VarDict
 			keyobj := key.Interface()
 			keyVarDict := GetVarDictFromValue(keyobj, depth+1)
-			// if needsPtrForKind(key.Kind()) {
-			// 	address := fmt.Sprintf("%d", reflect.ValueOf(&keyobj).Pointer())
-			// 	keyVarDict.SetAddress(address)
-			// }
+			if needsPtrForKind(key.Kind()) && key.CanAddr() {
+				address := fmt.Sprintf("%d", key.Addr().Pointer())
+				keyVarDict.SetAddress(address)
+			}
 			kv.setKey(keyVarDict)
 			// Get Value's VarDict
 			value := v.MapIndex(key)
@@ -250,7 +234,6 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			// }
 			valueobj := value.Interface()
 			valueVarDict := GetVarDictFromValue(valueobj, depth+1)
-			fmt.Println("field"+fieldName, value.CanAddr())
 			if needsPtrForKind(value.Kind()) && value.CanAddr() {
 				address := fmt.Sprintf("%d", value.Addr().Pointer())
 				valueVarDict.SetAddress(address)
@@ -285,9 +268,11 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 		vardict.SetValue("#INTERFACE#")
 	case reflect.Func:
 		vardict.SetMeta("function")
+		vardict.SetType(v.Type().String())
 		vardict.SetValue("#FUNCTION#")
 	case reflect.Chan:
 		vardict.SetMeta("chan")
+		vardict.SetType(v.Type().String())
 		vardict.SetValue("#CHANNEL#")
 	default:
 		vardict.SetMeta("unknown")
