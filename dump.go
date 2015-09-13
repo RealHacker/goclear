@@ -73,11 +73,11 @@ func (dict VarDict) SetField(name string, val interface{}) {
 }
 
 // Provide a new blank VarDict
-func NewVarDict() *VarDict {
+func NewVarDict() VarDict {
 	dict := make(VarDict)
 	dict["metatype"] = nil
 	dict["value"] = nil
-	return &dict
+	return dict
 }
 
 // Do we need to wrap this kind in a Pointer for next level?
@@ -97,7 +97,7 @@ var PointerCache []int64
 
 // The entry point for generating a VarDict
 // It determines whether to call GetVarDictFromPtr or GetVarDictFromValue
-func GetVarDict(name string, obj interface{}) *VarDict {
+func GetVarDict(name string, obj interface{}) VarDict {
 	// Get a clean pointer cache
 	PointerCache = make([]int64, 32)
 
@@ -107,7 +107,7 @@ func GetVarDict(name string, obj interface{}) *VarDict {
 }
 
 // Generate a VarDict for the object itself, for basic types like int, string, and pointer
-func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
+func GetVarDictFromValue(variable interface{}, depth int) VarDict {
 	vardict := NewVarDict()
 
 	if variable == nil {
@@ -183,7 +183,7 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 		for i := 0; i < arraylen; i++ {
 			vi := v.Index(i)
 			obji := vi.Interface()
-			childvardict := *GetVarDictFromValue(obji, depth+1)
+			childvardict := GetVarDictFromValue(obji, depth+1)
 			if needsPtrForKind(vi.Kind()) && vi.CanAddr() {
 				address := fmt.Sprintf("%d", vi.Addr().Pointer())
 				childvardict.SetAddress(address)
@@ -232,13 +232,17 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 			// if value.Kind() == reflect.Func || value.Kind() == reflect.Interface {
 			// 	continue
 			// }
-			valueobj := value.Interface()
-			valueVarDict := GetVarDictFromValue(valueobj, depth+1)
-			if needsPtrForKind(value.Kind()) && value.CanAddr() {
-				address := fmt.Sprintf("%d", value.Addr().Pointer())
-				valueVarDict.SetAddress(address)
+			if value.CanInterface() {
+				valueobj := value.Interface()
+				valueVarDict := GetVarDictFromValue(valueobj, depth+1)
+				if needsPtrForKind(value.Kind()) && value.CanAddr() {
+					address := fmt.Sprintf("%d", value.Addr().Pointer())
+					valueVarDict.SetAddress(address)
+				}
+				varDictDict[fieldName] = valueVarDict
+			} else {
+				varDictDict[fieldName] = "#UNEXPORTED#"
 			}
-			varDictDict[fieldName] = valueVarDict
 		}
 		vardict.SetValue(varDictDict)
 	case reflect.Uintptr, reflect.UnsafePointer:
@@ -262,7 +266,7 @@ func GetVarDictFromValue(variable interface{}, depth int) *VarDict {
 		vardict.SetValue(variable)
 	case reflect.Complex64, reflect.Complex128:
 		vardict.SetMeta("complex")
-		vardict.SetValue("#COMPLEX#")
+		vardict.SetValue(fmt.Sprintf("%v", variable))
 	case reflect.Interface:
 		vardict.SetMeta("interface")
 		vardict.SetValue("#INTERFACE#")
