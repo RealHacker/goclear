@@ -39,13 +39,13 @@ func (kv KeyValuePair) setValue(obj interface{}) {
 
 type VarDict map[string]interface{}
 
-func (dict VarDict) Dump() []byte {
+func (dict VarDict) Dump() string {
 	v, err := json.MarshalIndent(dict, "-", "  ")
 	if err != nil {
 		printLog("ERROR when marshalling into JSON:", dict)
 		return nil
 	}
-	return v
+	return string(v)
 }
 
 func (dict VarDict) SetName(val string) {
