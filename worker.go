@@ -2,8 +2,10 @@ package goclear
 
 import "fmt"
 import "os"
+import "os/signal"
 import "time"
 import "sync"
+import "syscall"
 import "database/sql"
 import _ "github.com/mattn/go-sqlite3"
 
@@ -48,8 +50,16 @@ func init() {
 	records = make(chan *VarDict, 100)
 	// Start the worker to listen on the channel
 	wg.Add(1)
+	// Currently only one worker, could support a configurable number of workers
 	go Worker()
-
+	// Finish() should be called when exiting abnormally
+	go func(){
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, syscall.SIGHUP, syscall.SIGINT,syscall.SIGTERM)
+		<-signalChan
+		Finish()
+		os.Exit(1)
+	}
 }
 
 // This function should be called before exiting the application, both normal exit and killing
