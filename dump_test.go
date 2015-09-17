@@ -1001,3 +1001,45 @@ func TestDumpSample(t *testing.T) {
 	fmt.Println(string(GetVarDict("dic", dic).Dump()))
 	fmt.Println(string(GetVarDict("dicptr", &dic).Dump()))
 }
+
+func TestClone(t *testing.T) {
+	i := 123
+        vd1 := GetVarDict("i", i)
+        vd1copy := vd1.Clone()
+	t.Log("i and copy:", vd1.Dump() == vd1copy.Dump())	
+
+        // struct
+        tt:= TT{
+                String: "abcdef",
+                IntPtr: &i,
+                TTPtr: nil,
+        }
+        // struct with function field and method
+        m := EXAMPLE {
+                Ex: tt,
+                Func: Abc,
+        }
+        // Recursive structure
+        tt.Parent = &m
+        m.ExPtr = &tt
+
+        vd2 := GetVarDict("tt", tt)
+	vd2copy := vd2.Clone()
+	t.Log("tt and copy:", vd2.Dump() == vd2copy.Dump())
+	
+        // array/slice
+        arr := make([]TT, 3)
+        arr[0] = TT{"abc", &i, nil, nil}
+        arr[1] = TT{"xyz", &i, nil, &m}
+       	vd3 := GetVarDict("array", arr)
+	vd3copy := vd3.Clone()
+	t.Log("arry and copy:", vd3.Dump() == vd3copy.Dump())
+
+        // map
+        dic := make(map[string]*TT)
+        dic["abc"] = &TT{"ksajdf", &i, &tt, &m}
+        dic["sdf"] = &TT{"sdfs", nil, nil, nil}
+        vd4:=GetVarDict("dicptr", &dic)
+	vd4copy := vd4.Clone()
+	t.Log("tt and copy:", vd4.Dump() == vd4copy.Dump())
+}

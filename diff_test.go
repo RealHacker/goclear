@@ -106,3 +106,4 @@ func TestCompare(t *testing.T){
 	_map()
 	_struct()
 }
+

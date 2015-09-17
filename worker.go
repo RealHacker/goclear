@@ -17,15 +17,17 @@ var wg sync.WaitGroup
 
 func init() {
 	InitializeConfig()
-	db, err := sql.Open("sqlite", Config.DBPath)
+
+	var err error
+	db, err = sql.Open("sqlite3", Config.DBPath)
 	if err != nil {
-		fmt.Println("Fail to initialize database, exit now...")
-		return 
+		fmt.Println("Fail to initialize database, exit now...", err)
+		os.Exit(1)
 	}
 
 	// If it is the first time, create the tables
 	createSessionStmt := "create table if not exists Session (id INTEGER PRIMARY KEY, timestamp INTEGER, hostname TEXT, path TEXT)"
-	createRecordsStmt := "create table if not exists Record (id INTEGER PRIMARY KEY, sessionID INTEGER REFERENCES Session (id), timestamp INTEGER, name TEXT, data TEXT"
+	createRecordsStmt := "create table if not exists Record (id INTEGER PRIMARY KEY, sessionID INTEGER REFERENCES Session (id), timestamp INTEGER, name TEXT, data TEXT)"
 	ExecuteSQL(createSessionStmt)
 	ExecuteSQL(createRecordsStmt)
 
@@ -58,8 +60,9 @@ func init() {
 		signal.Notify(signalChan, syscall.SIGHUP, syscall.SIGINT,syscall.SIGTERM)
 		<-signalChan
 		Finish()
+		fmt.Println("Clearing up before exit...")
 		os.Exit(1)
-	}
+	}()
 }
 
 // This function should be called before exiting the application, both normal exit and killing
@@ -81,7 +84,9 @@ func Worker() {
 	stmt := "insert into Record (sessionID, timestamp, name, data) values (?, ?, ?, ?)"
 	for record := range records {
 		timestamp := time.Now().Unix()
-		varname := *record["name"]
+
+		fmt.Println("In worker")
+		varname := (*record)["name"]
 		data := record.Dump()
 		// save to database
 		ExecuteSQLWithArguments(stmt, SessionID, timestamp, varname, data)
@@ -90,7 +95,13 @@ func Worker() {
 
 func PostRecord(vardict *VarDict){
 	// Just put it into work queue
-	records <- vardict
+	select {
+	case records <- vardict:
+		// Successfully sent to worker
+		fmt.Println("Saving record to db")
+	case <-time.After(time.Millisecond*100):
+		fmt.Println("Fail to send variable value to worker")
+	}
 }
 
 func ExecuteSQL(sql string) sql.Result{

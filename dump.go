@@ -43,9 +43,60 @@ func (dict VarDict) Dump() string {
 	v, err := json.MarshalIndent(dict, "-", "  ")
 	if err != nil {
 		printLog("ERROR when marshalling into JSON:", dict)
-		return nil
+		return ""
 	}
 	return string(v)
+}
+
+// Make a deep copy of VarDict
+func (dict VarDict) Clone() VarDict {
+	clone := NewVarDict()
+	for k,v := range(dict) {
+		if  k!= "value"{
+			clone[k] = v
+		}
+	}
+	value := dict["value"]
+        switch value.(type) {
+        case VarDict:
+		vd := value.(VarDict)
+                clone["value"] = vd.Clone()
+        case []VarDict:
+                sliceClone := make([]VarDict,0)
+		for _, item := range value.([]VarDict) {
+			// vd := item.(VarDict)
+			sliceClone = append(sliceClone, item.Clone())
+		}
+		clone["value"] = sliceClone
+        case []KeyValuePair:
+                sliceClone := make([]KeyValuePair, 0)
+		for _, pair := range value.([]KeyValuePair) {
+			key:= pair["key"].(VarDict)
+			keyClone := key.Clone()
+			val:= pair["value"].(VarDict)
+			valClone := val.Clone()
+			kv := make(KeyValuePair)
+			kv.setKey(keyClone)
+			kv.setValue(valClone)
+			sliceClone = append(sliceClone, kv)
+		}
+		clone["value"] = sliceClone
+        case map[string]interface{}:
+        	mapClone := make(map[string]interface{})
+		for field, val := range value.(map[string]interface{}) {
+			valvd, ok := val.(VarDict)
+			if ok {
+				mapClone[field] = valvd.Clone()
+			} else {
+				mapClone[field] = val
+			}
+		}        
+		clone["value"] = mapClone
+        default:
+                clone["value"] = value
+        }
+
+	return clone
 }
 
 func (dict VarDict) SetName(val string) {
@@ -106,6 +157,7 @@ func GetVarDict(name string, obj interface{}) VarDict {
 	return vardict
 }
 
+//
 // Generate a VarDict for the object itself, for basic types like int, string, and pointer
 func GetVarDictFromValue(variable interface{}, depth int) VarDict {
 	vardict := NewVarDict()

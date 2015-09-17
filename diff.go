@@ -1,5 +1,7 @@
 package goclear
 
+import "fmt"
+
 func getUnchangedVarDict() VarDict {
 	dict := make(VarDict)
 	dict["metatype"] = "unchanged"
@@ -7,7 +9,7 @@ func getUnchangedVarDict() VarDict {
 	return dict
 }
 
-func getValueType(v interface{}) string{
+func GetValueType(v interface{}) string{
 	if v == nil {
 		return "nil"
 	}
@@ -46,8 +48,8 @@ func (vardict VarDict) Compare(last VarDict) bool{
 		return false
 	}
 	// Get the types of the 2 vardict's value field
-	t1 := getValueType(vardict["value"])
-	t2 := getValueType(last["value"])
+	t1 := GetValueType(vardict["value"])
+	t2 := GetValueType(last["value"])
 	if t1 != t2 {
 		return false
 	}
@@ -122,7 +124,7 @@ func (vardict VarDict) Compare(last VarDict) bool{
 			if !exists {
 				allSame = false
 			} else {
-				tt1, tt2 := getValueType(v1), getValueType(v2)
+				tt1, tt2 := GetValueType(v1), GetValueType(v2)
 				if tt1 != tt2 {
 					allSame = false
 				} else if tt1=="VarDict"{
@@ -147,3 +149,33 @@ func (vardict VarDict) Compare(last VarDict) bool{
 	}
 
 }
+
+var LastVarDict map[string]*VarDict
+
+func DumpVar(name string, object interface{}) error {
+	// First check if LastVarDict is initialized
+	if LastVarDict == nil {
+		LastVarDict = make(map[string]*VarDict)
+	}
+	vardict := GetVarDict(name, object)
+	
+	// If has last value, compare first
+	last, ok := LastVarDict[name]
+	var nextLast VarDict
+	if ok {
+		// If need to compare, make a clone
+		nextLast = vardict.Clone()
+		unchanged := vardict.Compare(*last)
+		if unchanged {
+			vardict = getUnchangedVarDict() 
+		}
+	} else {
+		nextLast = vardict
+	}
+	fmt.Println(LastVarDict)
+	// Put the current vardict in LastVarDict
+	LastVarDict[name] = &nextLast
+	PostRecord(&vardict)	
+	return nil
+}
+
