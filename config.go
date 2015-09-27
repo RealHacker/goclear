@@ -8,6 +8,7 @@ type Configuration struct {
 var Config Configuration
 
 func InitializeConfig() {
+	// These will come from a configuration file
 	Config.MaxDepth = 5
-	Config.DBPath = "./goclear.db"
+	Config.DBPath = "root@/goclear"
 }

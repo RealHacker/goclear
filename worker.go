@@ -7,7 +7,7 @@ import "time"
 import "sync"
 import "syscall"
 import "database/sql"
-import _ "github.com/mattn/go-sqlite3"
+import _ "github.com/go-sql-driver/mysql"
 
 // Initialize a global database object
 var db *sql.DB
@@ -19,15 +19,16 @@ func init() {
 	InitializeConfig()
 
 	var err error
-	db, err = sql.Open("sqlite3", Config.DBPath)
+	db, err = sql.Open("mysql", Config.DBPath)
+
 	if err != nil {
 		fmt.Println("Fail to initialize database, exit now...", err)
 		os.Exit(1)
 	}
 
 	// If it is the first time, create the tables
-	createSessionStmt := "create table if not exists Session (id INTEGER PRIMARY KEY, timestamp INTEGER, hostname TEXT, path TEXT)"
-	createRecordsStmt := "create table if not exists Record (id INTEGER PRIMARY KEY, sessionID INTEGER REFERENCES Session (id), timestamp INTEGER, name TEXT, data TEXT)"
+	createSessionStmt := "create table if not exists Session (id INT AUTO_INCREMENT PRIMARY KEY , timestamp INTEGER, hostname TEXT, path TEXT)"
+	createRecordsStmt := "create table if not exists Record (id INT AUTO_INCREMENT PRIMARY KEY, sessionID INTEGER REFERENCES Session (id), timestamp INTEGER, name TEXT, data TEXT)"
 	ExecuteSQL(createSessionStmt)
 	ExecuteSQL(createRecordsStmt)
 
@@ -121,7 +122,7 @@ func ExecuteSQLWithArguments(sqlfmt string, args ...interface{}) sql.Result{
 	}
 	result, err := db.Exec(sqlfmt, args...)
 	if err != nil {
-		fmt.Println("Fail to execute SQL:", sqlfmt)
+		fmt.Println("Fail to execute SQL:", sqlfmt, err)
 	}
 	return result
 }
